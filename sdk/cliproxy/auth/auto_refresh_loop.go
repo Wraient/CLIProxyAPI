@@ -416,14 +416,16 @@ func nextRefreshCheckAt(now time.Time, auth *Auth, interval time.Duration) (time
 		return time.Time{}, false
 	}
 	if hasExpiry && !expiry.IsZero() {
-		dueAt := expiry.Add(-*lead)
+		// Spread refreshes across the lead window (hash of auth id) so large
+		// pools (~700+ xAI free accounts) do not all hit the token endpoint at once.
+		dueAt := expiry.Add(-*lead).Add(refreshStaggerOffset(auth, *lead))
 		if !dueAt.After(now) {
 			return now, true
 		}
 		return dueAt, true
 	}
 	if !lastRefresh.IsZero() {
-		dueAt := lastRefresh.Add(*lead)
+		dueAt := lastRefresh.Add(*lead).Add(refreshStaggerOffset(auth, *lead))
 		if !dueAt.After(now) {
 			return now, true
 		}

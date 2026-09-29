@@ -181,13 +181,18 @@ func TestAuthManager_DisableCoolingDoesNotPermanentlyBlock(t *testing.T) {
 		Error:           &Error{HTTPStatus: http.StatusTooManyRequests, Message: "7d limit rejected"},
 	})
 
-	// Must NOT be blocked when cooling is disabled
-	for _, m := range []string{"claude-3-5-sonnet-20241022", "claude-3-opus-20240229"} {
-		updatedAuth, _ := manager.GetByID(auth.ID)
-		blocked, _, _ := isAuthBlockedForModel(updatedAuth, m, time.Now())
-		if blocked {
-			t.Fatalf("model %q was blocked even though cooling is disabled", m)
-		}
+	// Refresh patch: the explicit RetryAfter IS honored even with cooling
+	// disabled, so the rate-limited model is parked for the window (siblings
+	// stay free: credential-scope propagation remains disabled), then unblocks.
+	updatedAuth, _ := manager.GetByID(auth.ID)
+	if blocked, _, _ := isAuthBlockedForModel(updatedAuth, "claude-3-5-sonnet-20241022", time.Now()); !blocked {
+		t.Fatal("model claude-3-5-sonnet-20241022 should be parked for the explicit RetryAfter even with cooling disabled")
+	}
+	if blocked, _, _ := isAuthBlockedForModel(updatedAuth, "claude-3-opus-20240229", time.Now()); blocked {
+		t.Fatal("sibling model claude-3-opus-20240229 must stay unblocked when cooling is disabled")
+	}
+	if blocked, _, _ := isAuthBlockedForModel(updatedAuth, "claude-3-5-sonnet-20241022", time.Now().Add(7*24*time.Hour+time.Second)); blocked {
+		t.Fatal("model claude-3-5-sonnet-20241022 still blocked after the RetryAfter window elapsed")
 	}
 }
 

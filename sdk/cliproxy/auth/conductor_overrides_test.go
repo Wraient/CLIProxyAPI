@@ -1359,13 +1359,17 @@ func TestManager_Execute_DisableCooling_DoesNotBlackoutAfter429RetryAfter(t *tes
 	if errExecute2 == nil {
 		t.Fatal("expected second execute error")
 	}
-	if statusCodeFromError(errExecute2) != http.StatusTooManyRequests {
-		t.Fatalf("second execute status = %d, want %d", statusCodeFromError(errExecute2), http.StatusTooManyRequests)
+	// The explicit RetryAfter is honored even with disable_cooling=true (refresh
+	// patch): the model is parked for the retry window, so the executor is not
+	// called again and the failure surfaces as a model_cooldown error.
+	var cooldownErr *modelCooldownError
+	if !errors.As(errExecute2, &cooldownErr) {
+		t.Fatalf("second execute error = %v, want modelCooldownError", errExecute2)
 	}
 
 	calls := executor.ExecuteCalls()
-	if len(calls) != 2 {
-		t.Fatalf("execute calls = %d, want 2", len(calls))
+	if len(calls) != 1 {
+		t.Fatalf("execute calls = %d, want 1 (second execute blocked by cooldown)", len(calls))
 	}
 
 	updated, ok := m.GetByID(auth.ID)
@@ -1376,8 +1380,8 @@ func TestManager_Execute_DisableCooling_DoesNotBlackoutAfter429RetryAfter(t *tes
 	if state == nil {
 		t.Fatalf("expected model state to be present")
 	}
-	if !state.NextRetryAfter.IsZero() {
-		t.Fatalf("expected NextRetryAfter to be zero when disable_cooling=true, got %v", state.NextRetryAfter)
+	if state.NextRetryAfter.IsZero() {
+		t.Fatalf("expected NextRetryAfter to be set (explicit RetryAfter honored under disable_cooling), got zero")
 	}
 }
 
@@ -1427,8 +1431,11 @@ func TestManager_Execute_DisableCooling_RetriesAfter429RetryAfter(t *testing.T) 
 	}
 
 	calls := executor.ExecuteCalls()
-	if len(calls) != 4 {
-		t.Fatalf("execute calls = %d, want 4 (initial + 3 retries)", len(calls))
+	// Refresh patch: the explicit RetryAfter is honored even with
+	// disable_cooling=true (clamped to the 10s quota floor), so the model is
+	// parked and the scheduled retries never reach the executor.
+	if len(calls) != 1 {
+		t.Fatalf("execute calls = %d, want 1 (retries blocked by cooldown)", len(calls))
 	}
 }
 

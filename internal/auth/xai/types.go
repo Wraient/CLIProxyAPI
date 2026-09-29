@@ -29,7 +29,9 @@ const (
 	MaxPollDuration = 30 * time.Minute
 )
 
-var refreshLead = 5 * time.Minute
+// refreshLead is how far ahead of access-token expiry we start OAuth refresh.
+// 2h gives large free-tier pools room to stagger refreshes instead of a 5m stampede.
+var refreshLead = 2 * time.Hour
 
 // RefreshLead returns the refresh lead time for xAI OAuth credentials.
 func RefreshLead() time.Duration {

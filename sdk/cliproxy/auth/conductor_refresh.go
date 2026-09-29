@@ -164,12 +164,45 @@ func (m *Manager) shouldRefresh(a *Auth, now time.Time) bool {
 		return false
 	}
 	if hasExpiry && !expiry.IsZero() {
-		return time.Until(expiry) <= *lead
+		// Stagger due time across the lead window so large pools don't stampede.
+		effectiveLead := *lead - refreshStaggerOffset(a, *lead)
+		if effectiveLead < 0 {
+			effectiveLead = 0
+		}
+		return time.Until(expiry) <= effectiveLead
 	}
 	if !lastRefresh.IsZero() {
 		return now.Sub(lastRefresh) >= *lead
 	}
 	return true
+}
+
+// refreshStaggerOffset returns a deterministic offset in [0, lead) derived from
+// the auth identity so refresh work for large pools is spread across the lead window.
+func refreshStaggerOffset(auth *Auth, lead time.Duration) time.Duration {
+	if auth == nil || lead <= 0 {
+		return 0
+	}
+	id := strings.TrimSpace(auth.ID)
+	if id == "" {
+		id = strings.TrimSpace(auth.FileName)
+	}
+	if id == "" {
+		id = strings.TrimSpace(auth.Label)
+	}
+	if id == "" {
+		return 0
+	}
+	var h uint64 = 14695981039346656037 // FNV-1a offset basis
+	for i := 0; i < len(id); i++ {
+		h ^= uint64(id[i])
+		h *= 1099511628211
+	}
+	nanos := lead.Nanoseconds()
+	if nanos <= 0 {
+		return 0
+	}
+	return time.Duration(h % uint64(nanos))
 }
 
 func authPreferredInterval(a *Auth) time.Duration {

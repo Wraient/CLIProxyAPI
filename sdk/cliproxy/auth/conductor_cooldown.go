@@ -879,25 +879,28 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 									backoffLevel = auth.Quota.BackoffLevel
 								}
 							}
-							if !disableCooling {
-								if result.RetryAfter != nil {
-									cooldown := *result.RetryAfter
-									if cooldown < minQuotaCooldownFloor {
-										cooldown = minQuotaCooldownFloor
-									}
-									next = now.Add(cooldown).Round(0)
-								} else {
-									quotaForFailure := state.Quota
-									if result.CredentialScope {
-										if auth.Quota.Exceeded && auth.Quota.Reason == "credential_quota" {
-											quotaForFailure = auth.Quota
-										} else {
-											quotaForFailure.NextRecoverAt = time.Time{}
-											quotaForFailure.BackoffLevel = 0
-										}
-									}
-									next, backoffLevel = quotaCooldownAfterFailure(quotaForFailure, now)
+							// Always honor explicit RetryAfter (free-usage 24h / rate-limit
+							// 20-40m from xaiStatusErr) even when disable-cooling is true,
+							// so exhausted accounts are skipped instead of hammered.
+							if result.RetryAfter != nil {
+								cooldown := *result.RetryAfter
+								if cooldown < minQuotaCooldownFloor {
+									cooldown = minQuotaCooldownFloor
 								}
+								next = now.Add(cooldown).Round(0)
+							} else if !disableCooling {
+								quotaForFailure := state.Quota
+								if result.CredentialScope {
+									if auth.Quota.Exceeded && auth.Quota.Reason == "credential_quota" {
+										quotaForFailure = auth.Quota
+									} else {
+										quotaForFailure.NextRecoverAt = time.Time{}
+										quotaForFailure.BackoffLevel = 0
+									}
+								}
+								next, backoffLevel = quotaCooldownAfterFailure(quotaForFailure, now)
+							}
+							if !next.IsZero() {
 								credentialNext = next
 								if state.Quota.Exceeded && state.Quota.NextRecoverAt.After(next) {
 									next = state.Quota.NextRecoverAt
@@ -2271,19 +2274,19 @@ func applyAuthFailureState(auth *Auth, resultErr *Error, retryAfter *time.Durati
 			auth.Quota.Exceeded = true
 			auth.Quota.Reason = "quota"
 			var next time.Time
-			if !disableCooling {
-				if retryAfter != nil {
-					cooldown := *retryAfter
-					if cooldown < minQuotaCooldownFloor {
-						cooldown = minQuotaCooldownFloor
-					}
-					next = now.Add(cooldown).Round(0)
-				} else {
-					next, auth.Quota.BackoffLevel = quotaCooldownAfterFailure(auth.Quota, now)
+			// Always honor explicit RetryAfter even with disable-cooling so free-usage
+			// 24h and rate-limit 20-40m cooldowns still skip the account.
+			if retryAfter != nil {
+				cooldown := *retryAfter
+				if cooldown < minQuotaCooldownFloor {
+					cooldown = minQuotaCooldownFloor
 				}
-				if auth.Quota.Exceeded && auth.Quota.NextRecoverAt.After(next) {
-					next = auth.Quota.NextRecoverAt
-				}
+				next = now.Add(cooldown).Round(0)
+			} else if !disableCooling {
+				next, auth.Quota.BackoffLevel = quotaCooldownAfterFailure(auth.Quota, now)
+			}
+			if !next.IsZero() && auth.Quota.Exceeded && auth.Quota.NextRecoverAt.After(next) {
+				next = auth.Quota.NextRecoverAt
 			}
 			auth.Quota.NextRecoverAt = next
 			auth.NextRetryAfter = next

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math/rand/v2"
 	"net/http"
 	"sort"
 	"strings"
@@ -1087,13 +1088,27 @@ func xaiPatchCompletedOutput(eventData []byte, outputItemsByIndex map[int64][]by
 // cli-chat-proxy ("Usage resets over a rolling 24-hour window").
 const xaiFreeUsageExhaustedCooldown = 24 * time.Hour
 
+// Generic rate-limit 429s (not free-usage-exhausted) cool for 20–40 minutes so
+// disable-cooling pools still skip hot accounts without a 24h blackout.
+const (
+	xaiRateLimitCooldownMin = 20 * time.Minute
+	xaiRateLimitCooldownMax = 40 * time.Minute
+)
+
+func xaiRateLimitCooldown() time.Duration {
+	span := xaiRateLimitCooldownMax - xaiRateLimitCooldownMin
+	if span <= 0 {
+		return xaiRateLimitCooldownMin
+	}
+	return xaiRateLimitCooldownMin + time.Duration(rand.Int64N(int64(span)+1))
+}
+
 // xaiStatusErr normalizes upstream xAI error bodies for conductor behavior:
 //   - credential invalidation (403 bad-credentials) is remapped to 401 so the
 //     existing OAuth refresh-once-and-retry path runs instead of payment cooldown
 //   - free-tier exhaustion (subscription:free-usage-exhausted) carries a 24h
 //     RetryAfter hint for auth cooldown / account rotation
-//
-// Generic 429s stay without an explicit retry hint so conductor backoff still applies.
+//   - generic 429s carry a 20–40m RetryAfter for short rate-limit cooldowns
 func xaiStatusErr(code int, body []byte) statusErr {
 	err := statusErr{code: code, msg: string(body)}
 	if len(body) == 0 {
@@ -1118,7 +1133,10 @@ func xaiStatusErr(code int, body []byte) statusErr {
 		strings.Contains(msg, "included free usage") {
 		d := xaiFreeUsageExhaustedCooldown
 		err.retryAfter = &d
+		return err
 	}
+	d := xaiRateLimitCooldown()
+	err.retryAfter = &d
 	return err
 }
 

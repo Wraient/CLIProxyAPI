@@ -21,11 +21,15 @@ func TestXAIStatusErr_FreeUsageExhaustedSets24hRetryAfter(t *testing.T) {
 	}
 }
 
-func TestXAIStatusErr_Generic429HasNoRetryAfter(t *testing.T) {
+func TestXAIStatusErr_Generic429HasRateLimitRetryAfter(t *testing.T) {
 	body := []byte(`{"code":"rate_limit","error":"too many requests"}`)
 	err := xaiStatusErr(http.StatusTooManyRequests, body)
-	if err.RetryAfter() != nil {
-		t.Fatalf("expected nil RetryAfter for generic 429, got %v", *err.RetryAfter())
+	if err.RetryAfter() == nil {
+		t.Fatal("expected RetryAfter for generic 429")
+	}
+	got := *err.RetryAfter()
+	if got < xaiRateLimitCooldownMin || got > xaiRateLimitCooldownMax {
+		t.Fatalf("RetryAfter = %v, want between %v and %v", got, xaiRateLimitCooldownMin, xaiRateLimitCooldownMax)
 	}
 }
 

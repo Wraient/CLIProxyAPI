@@ -779,7 +779,7 @@ func TestAPICallReplacesXAIOAuthAccessToken(t *testing.T) {
 			"access_token":  "xai-oauth-access-token",
 			"refresh_token": "xai-refresh-token",
 			"base_url":      "https://api.x.ai/v1",
-			"expired":       time.Now().Add(time.Hour).Format(time.RFC3339),
+			"expired":       time.Now().Add(4 * time.Hour).Format(time.RFC3339), // beyond local 2h xai refresh lead
 		},
 	}
 	if _, errRegister := manager.Register(context.Background(), xaiAuth); errRegister != nil {
@@ -948,7 +948,7 @@ func TestAPICallUsesXAITokenStorageWithoutRefresh(t *testing.T) {
 			AccessToken:   "xai-valid-storage-token",
 			RefreshToken:  "xai-refresh-token",
 			TokenEndpoint: tokenServer.URL,
-			Expire:        time.Now().Add(2 * time.Hour).Format(time.RFC3339),
+			Expire:        time.Now().Add(4 * time.Hour).Format(time.RFC3339), // beyond local 2h xai refresh lead
 		},
 	}
 	if _, errRegister := manager.Register(context.Background(), xaiAuth); errRegister != nil {
@@ -1176,7 +1176,7 @@ func TestAPICallPrioritizesStorageAccessTokenOverMetadataIDToken(t *testing.T) {
 			AccessToken:   "xai-real-access-token",
 			RefreshToken:  "xai-refresh-token",
 			TokenEndpoint: tokenServer.URL,
-			Expire:        time.Now().Add(2 * time.Hour).Format(time.RFC3339),
+			Expire:        time.Now().Add(4 * time.Hour).Format(time.RFC3339), // beyond local 2h xai refresh lead
 		},
 	}
 	if _, errRegister := manager.Register(context.Background(), xaiAuth); errRegister != nil {
@@ -1338,7 +1338,7 @@ func TestAPICallReplacesXAIOAuthAccessTokenInData(t *testing.T) {
 			"access_token":  "xai-body-data-token",
 			"refresh_token": "xai-refresh-token",
 			"base_url":      "https://api.x.ai/v1",
-			"expired":       time.Now().Add(time.Hour).Format(time.RFC3339),
+			"expired":       time.Now().Add(4 * time.Hour).Format(time.RFC3339), // beyond local 2h xai refresh lead
 		},
 	}
 	if _, errRegister := manager.Register(context.Background(), xaiAuth); errRegister != nil {
