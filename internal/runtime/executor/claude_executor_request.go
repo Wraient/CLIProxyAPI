@@ -688,6 +688,16 @@ func classifyClaudeUpstreamError(statusCode int, headers http.Header, body []byt
 }
 
 func classifyClaudeUpstreamErrorWithCooling(statusCode int, headers http.Header, body []byte, modelLevelCooling bool) error {
+	// A service outage is not an Anthropic quota window. Preserve its exact
+	// standard retry hint for both scheduling and the downstream response.
+	if statusCode == http.StatusRequestTimeout || (statusCode >= 500 && statusCode < 600) {
+		retryAfter := helps.ParseServiceRetryAfter(headers, time.Now())
+		err := statusErr{code: statusCode, msg: string(body), retryAfter: retryAfter}
+		if retryAfter != nil {
+			return statusErrWithHeaders{statusErr: err, headers: http.Header{"Retry-After": []string{headers.Get("Retry-After")}}}
+		}
+		return err
+	}
 	var retryAfter *time.Duration
 	if statusCode == http.StatusTooManyRequests || (statusCode >= 400 && statusCode < 600) {
 		retryAfter = helps.ParseClaudeRateLimitReset(headers, time.Now())
